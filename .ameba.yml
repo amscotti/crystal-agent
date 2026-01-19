@@ -1,0 +1,7 @@
+# Ameba configuration
+# https://github.com/crystal-ameba/ameba
+
+Metrics/CyclomaticComplexity:
+  # Slightly raised from default 10 to accommodate UI status rendering
+  # which has multiple action states to handle
+  MaxComplexity: 12

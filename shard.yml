@@ -1,0 +1,31 @@
+name: cr-agent
+version: 0.1.0
+
+authors:
+  - Anthony Scotti <anthony.m.scotti@gmail.com>
+
+targets:
+  crystal-agent:
+    main: src/crystal-agent.cr
+
+crystal: ">= 1.18.2"
+
+dependencies:
+  anthropic-cr:
+    github: amscotti/anthropic-cr
+    version: "~> 0.1.1"
+  dotenv:
+    github: drum445/dotenv
+  markout:
+    github: amscotti/markout
+  brave_search:
+    github: amscotti/brave_search
+  markterm:
+    github: ralsina/markterm
+
+development_dependencies:
+  ameba:
+    github: crystal-ameba/ameba
+    version: "~> 1.6"
+
+license: MIT
