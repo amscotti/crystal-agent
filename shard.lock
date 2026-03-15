@@ -6,31 +6,19 @@ shards:
 
   anthropic-cr:
     git: https://github.com/amscotti/anthropic-cr.git
-    version: 0.1.1
-
-  baked_file_system:
-    git: https://github.com/ralsina/baked_file_system.git
-    version: 0.10.0+git.commit.beb373124c7a235cfb9cd94e36849d8168eaa04b
-
-  base58:
-    git: https://github.com/crystal-china/base58.cr.git
-    version: 0.1.0+git.commit.f7193c497efff614cf87b03f0bd07741915a592f
+    version: 0.3.0
 
   brave_search:
     git: https://github.com/amscotti/brave_search.git
     version: 0.1.0
 
-  crimage:
-    git: https://github.com/naqvis/crimage.git
-    version: 1.0.4+git.commit.b65f67df27f4cb8807a34d94a90dfd4162acf45a
-
-  docopt:
-    git: https://github.com/ralsina/docopt.cr.git
-    version: 0.3.1
-
   dotenv:
     git: https://github.com/drum445/dotenv.git
     version: 0.5.0
+
+  glimmer:
+    git: https://github.com/amscotti/glimmer.git
+    version: 0.1.0
 
   json-schema:
     git: https://github.com/spider-gazelle/json-schema.git
@@ -42,21 +30,9 @@ shards:
 
   markd:
     git: https://github.com/icyleaf/markd.git
-    version: 0.5.0
+    version: 0.6.0+git.commit.6163869970fbab48c081106543591deb6630bcde
 
   markout:
     git: https://github.com/amscotti/markout.git
-    version: 0.1.0
-
-  markterm:
-    git: https://github.com/ralsina/markterm.git
-    version: 0.6.3
-
-  sixteen:
-    git: https://github.com/ralsina/sixteen.git
-    version: 0.7.0
-
-  tartrazine:
-    git: https://github.com/ralsina/tartrazine.git
-    version: 0.20.1
+    version: 0.3.0
 

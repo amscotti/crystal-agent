@@ -8,7 +8,7 @@ module CrystalAgent
     @[JSON::Field(description: "The research topic or question to investigate")]
     getter topic : String
 
-    @[JSON::Field(description: "Specific aspects or sub-questions to explore (2-5 items)")]
+    @[JSON::Field(description: "Specific aspects or sub-questions to explore (1-8 items)")]
     getter aspects : Array(String)
   end
 

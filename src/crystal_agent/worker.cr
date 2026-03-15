@@ -23,8 +23,6 @@ module CrystalAgent
     getter status : Symbol
     getter round : Int32
 
-    MAX_ITERATIONS = 15
-
     def initialize(@id : Int32, @task : String, @client : Anthropic::Client, @config : Config,
                    @status_channel : Channel(WorkerStatus)? = nil, @round : Int32 = 1)
       @status = :pending
@@ -44,18 +42,26 @@ module CrystalAgent
       2. **fetch_url** - Read the full content of a specific URL for detailed information
 
       Research Strategy:
-      1. Start by searching for relevant information on your topic
-      2. When you find promising URLs in search results, use fetch_url to read the full content
-      3. Gather information from multiple sources when possible
-      4. Continue searching and reading until you have comprehensive information
-      5. Synthesize your findings into a clear, well-organized response
+      1. Start with a broad search to map the topic
+      2. Run follow-up searches with different phrasings to widen coverage and catch missed angles
+      3. For products, models, releases, pricing, docs, or company claims, explicitly search for official sources first, using a `site:` query when the official domain is known
+      4. Use freshness filters for current-event or release topics when recency matters
+      5. When you find promising URLs, use fetch_url to read the full content, especially for primary sources
+      6. Cross-check important claims with multiple sources before treating them as confirmed
+      7. Keep searching and reading until you can separate confirmed facts from uncertainty
+      8. Synthesize your findings into a clear, well-organized response
 
       Guidelines:
-      - Be thorough - read actual articles, don't just rely on search snippets
-      - Cross-reference information from multiple sources
-      - Include relevant facts, data, and findings
-      - Note the sources of key information
-      - Be concise but comprehensive in your final response
+      - Be thorough - read actual pages, not just snippets
+      - Prefer official documentation, vendor blogs, release notes, or product pages when available
+      - Treat fetched official pages as higher quality evidence than your prior model knowledge or third-party summaries
+      - Never conclude that a product or model does not exist unless you searched for official sources and failed to find confirming evidence
+      - Use multiple searches if the first result set looks narrow, noisy, or contradictory
+      - Fetch at least 2-4 high-value pages when the topic is substantive
+      - Include relevant facts, data, dates, and findings
+      - Call out conflicting or uncertain information explicitly instead of guessing
+      - If official sources contain information newer than your training knowledge, trust the fetched official source
+      - End with short sections titled exactly: Confirmed Findings, Open Questions or Conflicts, and Sources
       PROMPT
 
       user_message = <<-MSG
@@ -63,7 +69,13 @@ module CrystalAgent
 
       Please research this topic thoroughly. Use web_search to find relevant information,
       then fetch_url to read the full content of important URLs to gather detailed information.
-      Provide comprehensive findings based on your research.
+      Use more than one search if needed, prioritize official sources when they exist,
+      and clearly separate confirmed information from uncertainty.
+
+      For model, product, or release questions:
+      - Start with an official-source search if you can infer the vendor domain
+      - Do not treat search snippets alone as confirmed evidence
+      - In the final write-up, identify which claims came from official sources
       MSG
 
       # Create tools with status callbacks
@@ -74,12 +86,12 @@ module CrystalAgent
       steps = 0
 
       runner = @client.beta.messages.tool_runner(
-        model: Anthropic::Model::CLAUDE_HAIKU_4_5,
+        model: @config.worker_model,
         max_tokens: @config.max_tokens,
         system: system_prompt,
         messages: [Anthropic::MessageParam.user(user_message)],
         tools: tools,
-        max_iterations: MAX_ITERATIONS
+        max_iterations: @config.worker_max_iterations
       )
 
       # Process through all steps
@@ -117,12 +129,17 @@ module CrystalAgent
     private def create_search_tool_with_status : Anthropic::Tool
       Anthropic.tool(
         name: "web_search",
-        description: "Search the web for current information on a topic. Returns relevant search results with titles, URLs, and descriptions.",
+        description: "Search the web for current information on a topic. Use this repeatedly with alternate queries, freshness filters, and offsets to broaden coverage and verify claims.",
         input: WebSearchInput
       ) do |input|
         query_display = input.query.size > 40 ? input.query[0, 37] + "..." : input.query
         emit_status(WorkerAction::Searching, query_display)
-        Tools.perform_search(input.query, input.count || 10)
+        Tools.perform_search(
+          input.query,
+          input.count || @config.default_search_count,
+          offset: input.offset,
+          freshness: input.freshness
+        )
       end
     end
 

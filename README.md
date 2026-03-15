@@ -13,8 +13,8 @@ Crystal Agent uses a supervisor-worker architecture with an agentic research loo
 1. **Supervisor Agent**: Analyzes your query and decides what research is needed
 2. **Research Tool**: Spawns parallel worker agents to investigate specific aspects
 3. **Worker Agents**: Run concurrently using Crystal's fibers, each performing web searches and fetching page content
-4. **Review & Iterate**: Supervisor reviews findings and may request additional research if gaps are identified
-5. **Synthesis**: All findings are passed to a synthesis call that generates the final answer
+4. **Review & Iterate**: Supervisor reviews findings and may request additional research if gaps are identified, up to 3 rounds by default
+5. **Synthesis**: Supervisor generates the final answer directly from the gathered research evidence
 6. **Output**: Response is rendered as styled markdown in the terminal
 
 ```
@@ -63,7 +63,7 @@ Crystal Agent uses a supervisor-worker architecture with an agentic research loo
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────┐
-│           Styled Markdown Output (Markterm)             │
+│           Styled Markdown Output (Glimmer)              │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -71,7 +71,7 @@ Crystal Agent uses a supervisor-worker architecture with an agentic research loo
 
 ### Prerequisites
 
-- [Crystal](https://crystal-lang.org/) 1.18.2 or later
+- [Crystal](https://crystal-lang.org/) 1.19.1 or later
 - An [Anthropic API key](https://console.anthropic.com/)
 - A [Brave Search API key](https://brave.com/search/api/)
 
@@ -106,6 +106,12 @@ BRAVE_API_KEY=your-brave-search-key
 |----------|-------------|
 | `ANTHROPIC_API_KEY` | Your Anthropic API key (required) |
 | `BRAVE_API_KEY` | Your Brave Search API key (required) |
+| `CRYSTAL_AGENT_SUPERVISOR_MODEL` | Override the supervisor model (`claude-sonnet-4-6` by default) |
+| `CRYSTAL_AGENT_WORKER_MODEL` | Override the worker model (`claude-haiku-4-5-20251001` by default) |
+| `CRYSTAL_AGENT_MAX_TOKENS` | Override the token limit for supervisor and workers (default `8192`) |
+| `CRYSTAL_AGENT_MAX_RESEARCH_ROUNDS` | Cap follow-up research rounds (default `3`) |
+| `CRYSTAL_AGENT_WORKER_MAX_ITERATIONS` | Cap tool-runner steps per worker (default `18`) |
+| `CRYSTAL_AGENT_DEFAULT_SEARCH_COUNT` | Default Brave result count per search (default `12`, max `20`) |
 
 ### Examples
 
@@ -127,13 +133,14 @@ BRAVE_API_KEY=your-brave-search-key
 
 ### Components
 
-- **Config** (`src/crystal_agent/config.cr`): Application configuration
-- **Tools** (`src/crystal_agent/tools.cr`): Web search (Brave) and URL fetching tools
+- **Config** (`src/crystal_agent/config.cr`): Application configuration and environment-backed runtime tuning
+- **Tools** (`src/crystal_agent/tools.cr`): Web search (Brave) and URL fetching tools, with in-memory fetch deduplication per run
 - **Worker** (`src/crystal_agent/worker.cr`): Individual research agents that search and fetch content
 - **Worker Status** (`src/crystal_agent/worker_status.cr`): Status tracking for worker progress
 - **Research** (`src/crystal_agent/research.cr`): Coordinates parallel workers for research tasks
 - **Supervisor** (`src/crystal_agent/supervisor.cr`): Agentic coordinator with research tool
 - **UI** (`src/crystal_agent/ui.cr`): Terminal progress display with status updates
+- **Markdown Renderer** (`src/crystal_agent/markdown_renderer.cr`): Glimmer-backed terminal markdown rendering
 
 ### Concurrency Model
 
@@ -163,7 +170,7 @@ crystal spec
 - [anthropic-cr](https://github.com/amscotti/anthropic-cr) - Crystal SDK for Anthropic's Claude API
 - [brave_search](https://github.com/amscotti/brave_search) - Crystal client for Brave Search API
 - [markout](https://github.com/amscotti/markout) - HTML to Markdown conversion
-- [markterm](https://github.com/ralsina/markterm) - Terminal markdown rendering
+- [glimmer](https://github.com/amscotti/glimmer) - Terminal markdown rendering
 - [dotenv](https://github.com/drum445/dotenv) - Environment variable loading
 - [ameba](https://github.com/crystal-ameba/ameba) - Static code analysis (dev)
 

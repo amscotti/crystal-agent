@@ -1,5 +1,4 @@
-require "json"
-require "colorize"
+require "set"
 
 module CrystalAgent
   # Callback interface for UI updates
@@ -23,79 +22,13 @@ module CrystalAgent
     def on_complete; end
   end
 
-  # Simple animated dots indicator
-  class ThinkingIndicator
-    FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-
-    @running : Bool = false
-    @message : String
-
-    def initialize(@message : String = "Generating response")
-    end
-
-    def start
-      @running = true
-      spawn do
-        frame = 0
-        while @running
-          print "\r  #{FRAMES[frame].colorize(:cyan)} #{@message}...  "
-          STDOUT.flush
-          frame = (frame + 1) % FRAMES.size
-          sleep 100.milliseconds
-        end
-      end
-      Fiber.yield
-    end
-
-    def stop
-      @running = false
-      Fiber.yield
-      print "\r\e[K" # Clear the line
-      STDOUT.flush
-    end
-  end
-
   # Agentic supervisor that coordinates research using tool_runner
   class Supervisor
-    SYSTEM_PROMPT = <<-PROMPT
-    You are a research supervisor AI. Your job is to thoroughly answer user questions by
-    conducting comprehensive research using your research tool.
-
-    You have access to:
-    - **research**: Investigate a topic with multiple parallel research workers
-
-    Strategy:
-    1. Analyze the user's question to identify the key aspects that need research
-    2. Use the research tool ONCE with well-crafted aspects to cover the question
-    3. Review the findings - only do follow-up research if there are SPECIFIC gaps
-    4. Provide a well-organized, thorough final answer
-
-    Guidelines:
-    - For most questions, ONE research call with 3-8 good aspects is sufficient
-    - Only do follow-up research if the first round is clearly missing specific information
-    - NEVER repeat similar queries - follow-up research must be for NEW, DIFFERENT aspects
-    - If doing follow-up, explicitly identify what's missing before researching
-    - Synthesize all findings into a clear, comprehensive response
-    - Cite sources when possible
-    PROMPT
-
-    SYNTHESIS_PROMPT = <<-PROMPT
-    You are a helpful research assistant. Based on the research findings provided,
-    give a comprehensive, well-organized answer to the user's question.
-
-    Guidelines:
-    - Synthesize information from all research findings
-    - Organize your response clearly with sections if appropriate
-    - Be thorough but concise
-    - Cite sources when possible
-    PROMPT
-
-    @collected_findings : Array(String)
-
     def initialize(@client : Anthropic::Client, @config : Config,
                    @ui_callback : UICallback = NullUICallback.new,
                    @status_channel : Channel(WorkerStatus)? = nil)
-      @collected_findings = [] of String
+      @research_rounds_used = 0
+      @seen_aspects = Set(String).new
       @research = Research.new(
         @client,
         @config,
@@ -114,26 +47,29 @@ module CrystalAgent
     # Process a user query using agentic research
     def process(query : String) : String
       @ui_callback.on_start(query)
-      @collected_findings.clear
-
-      research_tool = create_research_tool
+      @research_rounds_used = 0
+      @seen_aspects.clear
 
       runner = @client.beta.messages.tool_runner(
         model: @config.model,
         max_tokens: @config.max_tokens,
-        system: SYSTEM_PROMPT,
+        system: system_prompt,
         messages: [Anthropic::MessageParam.user(query)],
-        tools: [research_tool] of Anthropic::Tool,
-        max_iterations: 10
+        tools: [create_research_tool] of Anthropic::Tool,
+        max_iterations: @config.max_research_rounds + 4
       )
 
-      # Let the tool runner handle all iterations
       runner.each_message { }
 
-      @ui_callback.on_complete
+      if @research_rounds_used.zero?
+        raise "Supervisor returned without performing research."
+      end
 
-      # Generate final synthesis with thinking indicator
-      synthesize_findings(query)
+      answer = runner.final_message.text.strip
+      raise "Supervisor returned an empty response." if answer.empty?
+
+      @ui_callback.on_complete
+      answer
     end
 
     private def create_research_tool : Anthropic::Tool
@@ -142,37 +78,83 @@ module CrystalAgent
         description: "Conduct research on a topic using multiple parallel workers. Each worker will search the web and read relevant pages to gather information.",
         input: ResearchInput
       ) do |input|
-        findings = @research.investigate(input.topic, input.aspects)
-        @collected_findings << findings
-        findings
+        aspects = sanitize_aspects(input.aspects)
+        new_aspects = select_new_aspects(aspects)
+        if aspects.empty?
+          "Research request invalid. Provide between 1 and 8 non-empty, distinct aspects."
+        elsif new_aspects.empty?
+          "Research request skipped because it does not add new coverage. Only request follow-up research for genuinely new gaps, contradictions, or missing primary-source validation."
+        elsif @research_rounds_used >= @config.max_research_rounds
+          "Research limit reached. You have already completed #{@config.max_research_rounds} research rounds. Synthesize the final answer from the findings you already have instead of calling research again."
+        else
+          @research_rounds_used += 1
+          remember_aspects(new_aspects)
+          @research.investigate(input.topic, new_aspects)
+        end
       end
     end
 
-    private def synthesize_findings(query : String) : String
-      findings_text = @collected_findings.join("\n\n")
+    private def sanitize_aspects(aspects : Array(String)) : Array(String)
+      cleaned = aspects.map(&.strip).reject(&.empty?)
+      cleaned.uniq!
+      cleaned.size > 8 ? cleaned[0, 8] : cleaned
+    end
 
-      user_message = <<-MSG
-      Original Question: #{query}
+    private def select_new_aspects(aspects : Array(String)) : Array(String)
+      aspects.reject do |aspect|
+        @seen_aspects.includes?(normalize_aspect(aspect))
+      end
+    end
 
-      Research Findings:
-      #{findings_text}
+    private def remember_aspects(aspects : Array(String)) : Nil
+      aspects.each do |aspect|
+        @seen_aspects << normalize_aspect(aspect)
+      end
+    end
 
-      Please provide a comprehensive answer based on these research findings.
-      MSG
+    private def normalize_aspect(aspect : String) : String
+      aspect.downcase.gsub(/\s+/, " ").strip
+    end
 
-      indicator = ThinkingIndicator.new("Generating response")
-      indicator.start
+    private def system_prompt : String
+      <<-PROMPT
+      You are a research supervisor AI. Your job is to thoroughly answer user questions by
+      conducting comprehensive research using your research tool.
 
-      response = @client.messages.create(
-        model: @config.model,
-        max_tokens: @config.max_tokens,
-        system: SYNTHESIS_PROMPT,
-        messages: [Anthropic::MessageParam.user(user_message)]
-      )
+      You have access to:
+      - **research**: Investigate a topic with multiple parallel research workers
 
-      indicator.stop
+      Strategy:
+      1. Analyze the user's question to identify the key aspects that need research
+      2. Build aspects that widen coverage, not near-duplicates
+      3. For current events, releases, products, models, or company claims, ensure at least one aspect targets official or primary sources, and use a `site:` filter when the official domain is obvious
+      4. You must use the research tool at least once before answering factual, comparative, or time-sensitive questions
+      5. Use the first research round to cover the question broadly
+      6. After each round, decide whether there are specific gaps, unresolved contradictions, or missing primary-source confirmation
+      7. If needed, do a follow-up research round focused only on the missing information
+      8. Stop researching once the answer is well-supported or you reach #{@config.max_research_rounds} total research rounds
+      9. Provide a well-organized, thorough final answer
 
-      response.text
+      Final answer rules:
+      - Only state claims that are supported by the research tool outputs
+      - Prefer primary or official sources when the findings include them
+      - If the findings conflict, explicitly describe the conflict instead of overriding it with prior model assumptions
+      - Do not claim that something does not exist if the research findings include an official source confirming it
+      - Never dismiss a claim as fabricated solely because it is newer than your training cutoff or prior knowledge
+      - When an official fetched source conflicts with your prior knowledge, trust the fetched source and explain that it is newer evidence
+      - If a claim is only supported by secondary reporting, say that clearly
+      - Do not mention your training cutoff, prior knowledge, or inability to independently verify the fetched sources in the final answer
+      - Treat fetched pages from official domains returned by the research tool as verified evidence for the purposes of this task
+
+      Guidelines:
+      - For most questions, 1 research round with 4-8 good aspects is sufficient
+      - Follow-up rounds are allowed when they add NEW information, not repeated coverage
+      - NEVER repeat similar queries across rounds - follow-up research must target specific missing facts, conflicts, or validation needs
+      - If doing follow-up research, explicitly identify what is missing before calling research again
+      - Favor aspect lists that include primary-source validation, technical details, independent confirmation, and practical implications when relevant
+      - You may use at most #{@config.max_research_rounds} total research rounds
+      - Cite specific sources from the research findings when possible
+      PROMPT
     end
   end
 end

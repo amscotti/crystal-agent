@@ -1,5 +1,5 @@
 name: cr-agent
-version: 0.1.0
+version: 0.2.0
 
 authors:
   - Anthony Scotti <anthony.m.scotti@gmail.com>
@@ -8,20 +8,24 @@ targets:
   crystal-agent:
     main: src/crystal-agent.cr
 
-crystal: ">= 1.18.2"
+crystal: ">= 1.19.1"
 
 dependencies:
   anthropic-cr:
     github: amscotti/anthropic-cr
-    version: "~> 0.1.1"
+    version: "~> 0.3.0"
   dotenv:
     github: drum445/dotenv
+    version: "~> 0.5.0"
   markout:
     github: amscotti/markout
+    version: "~> 0.3.0"
   brave_search:
     github: amscotti/brave_search
-  markterm:
-    github: ralsina/markterm
+    version: "~> 0.1.0"
+  glimmer:
+    github: amscotti/glimmer
+    version: "~> 0.1.0"
 
 development_dependencies:
   ameba:

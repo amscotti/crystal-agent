@@ -2,8 +2,8 @@ require "dotenv"
 Dotenv.load if File.exists?(".env")
 
 require "anthropic-cr"
-require "markterm"
 require "./crystal_agent/config"
+require "./crystal_agent/markdown_renderer"
 require "./crystal_agent/tools"
 require "./crystal_agent/worker_status"
 require "./crystal_agent/worker"
@@ -25,21 +25,26 @@ module CrystalAgent
 
     # Initialize components
     config = Config.new
+    Config.validate_environment!
     client = Anthropic::Client.new
     ui = TerminalUI.new
-    supervisor = Supervisor.new(client, config, ui, ui.status_channel)
+    begin
+      supervisor = Supervisor.new(client, config, ui, ui.status_channel)
 
-    # Start UI status listener for real-time updates
-    ui.start_status_listener
+      # Start UI status listener for real-time updates
+      ui.start_status_listener
 
-    # Run research
-    result = supervisor.process(query)
+      # Run research
+      result = supervisor.process(query)
 
-    # Stop UI listener
-    ui.stop_status_listener
-
-    # Render result with styled markdown
-    puts Markd.to_term(result)
+      # Render result with styled markdown
+      puts MarkdownRenderer.render(result)
+    ensure
+      ui.shutdown
+    end
+  rescue ex : ArgumentError
+    STDERR.puts "Error: #{ex.message}"
+    exit(1)
   rescue ex : Anthropic::AuthenticationError
     STDERR.puts "Error: Invalid API key. Please set ANTHROPIC_API_KEY environment variable."
     exit(1)
@@ -68,6 +73,7 @@ module CrystalAgent
     Environment Variables:
       ANTHROPIC_API_KEY    - Required. Your Anthropic API key.
       BRAVE_API_KEY        - Required. Your Brave Search API key.
+      CRYSTAL_AGENT_MAX_RESEARCH_ROUNDS - Optional. Defaults to 3.
 
     Examples:
       crystal-agent "What is Crystal programming language?"

@@ -110,8 +110,16 @@ module CrystalAgent
 
     # Stop the status listener
     def stop_status_listener
+      return unless @running
+
       @running = false
       Fiber.yield
+      @ui_fiber = nil
+    end
+
+    def shutdown
+      stop_thinking_indicator
+      stop_status_listener
     end
 
     private def print_header
